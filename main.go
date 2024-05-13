@@ -40,15 +40,6 @@ func (d *Dealer) show() {
 	}
 }
 
-func (d *Dealer) ValidHand() bool {
-	d.show()
-	score := d.hand.Score()
-	if score <= 16 {
-		return false
-	}
-	return true
-}
-
 type Game struct {
 	curCardIndex int
 	NumDecks     int
@@ -101,13 +92,20 @@ func (g *Game) DealCards() {
 	}
 }
 
-func (g *Game) ShowDealerHand() {
-	dealer := g.dealer
-	for !dealer.ValidHand() {
-		dealer.hand = append(dealer.hand, g.GetNextCard())
+// TODO: Add soft 17 rule
+func (g *Game) ShowDealerHand() int {
+	fmt.Println("For dealer:")
+	score := g.dealer.hand.Score()
+	for score <= 16 {
+		c := g.GetNextCard()
+		g.dealer.hand = append(g.dealer.hand, c)
+		score += scoring.GetCardScore(c)
 	}
-
-	fmt.Printf("Dealer hand score is: %d\n", dealer.hand.Score())
+	fmt.Println(">Cards:")
+	for _, c := range g.dealer.hand {
+		fmt.Println(">>", c.Name())
+	}
+	return score
 
 }
 func (g *Game) start() {
@@ -145,8 +143,8 @@ func (g *Game) start() {
 	}
 
 	// show dealer hand
-	g.ShowDealerHand()
-	dealerScore := g.dealer.hand.Score()
+	dealerScore := g.ShowDealerHand()
+	fmt.Printf("Dealer scores: %d\n", dealerScore)
 	// determine winners
 	if dealerScore > 21 {
 		fmt.Println("Dealer gets busted.")
@@ -166,12 +164,12 @@ func (g *Game) start() {
 	}
 }
 
-// TODO: This is not working. Fix.
 func (g *Game) PrepareForNextRound() {
 	g.dealer.hand = make([]deck.Card, 0)
-	for _, p := range g.players {
-		p.hand = make([]deck.Card, 0)
+	for i, _ := range g.players {
+		g.players[i].hand = make([]deck.Card, 0)
 	}
+	return
 }
 
 func main() {
@@ -198,7 +196,6 @@ func main() {
 		if strings.ToLower(endGame) == "q" {
 			break
 		}
-		// clean player hands
 		game.PrepareForNextRound()
 	}
 }
