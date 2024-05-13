@@ -2,17 +2,29 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/CodeGophercises/blackjack/scoring"
 	"github.com/CodeGophercises/deck_of_cards/deck"
 )
 
+type Hand []deck.Card
+
+func (h *Hand) Score() int {
+	score := 0
+	for _, c := range *h {
+		score += scoring.GetCardScore(c)
+	}
+	return score
+}
+
 type Player struct {
 	Name string
-	hand []deck.Card
+	hand Hand
 }
 
 func (p *Player) show() {
-	fmt.Println("Your cards are:")
+	fmt.Printf("%s, Your cards are:\n", p.Name)
 	for _, c := range p.hand {
 		fmt.Println(">>>", c.Name())
 	}
@@ -20,6 +32,22 @@ func (p *Player) show() {
 
 // Just has some special rules
 type Dealer Player
+
+func (d *Dealer) show() {
+	fmt.Printf("Dealer %s has:\n", d.Name)
+	for _, c := range d.hand {
+		fmt.Println(">>>", c.Name())
+	}
+}
+
+func (d *Dealer) ValidHand() bool {
+	d.show()
+	score := d.hand.Score()
+	if score <= 16 {
+		return false
+	}
+	return true
+}
 
 type Game struct {
 	curCardIndex int
@@ -73,28 +101,79 @@ func (g *Game) DealCards() {
 	}
 }
 
+func (g *Game) ShowDealerHand() {
+	dealer := g.dealer
+	for !dealer.ValidHand() {
+		dealer.hand = append(dealer.hand, g.GetNextCard())
+	}
+
+	fmt.Printf("Dealer hand score is: %d\n", dealer.hand.Score())
+
+}
 func (g *Game) start() {
 	g.DealCards()
-
+	scores := make(map[string]int)
 	for _, player := range g.players {
 		player.show()
+		score := player.hand.Score()
 		fmt.Print("Enter 0 to stand and 1 to hit:> ")
 		var input int
 		fmt.Scanf("%d\n", &input)
 		for input != 0 {
-			player.hand = append(player.hand, g.GetNextCard())
+			c := g.GetNextCard()
+			player.hand = append(player.hand, c)
+			score += scoring.GetCardScore(c)
+			if score > 21 {
+				break
+			}
 			player.show()
 			fmt.Print("Enter 0 to stand and 1 to hit:> ")
 			fmt.Scanf("%d\n", &input)
 		}
+		fmt.Printf("%s's hand scores: %d\n", player.Name, score)
+		if score > 21 {
+			// busted
+			fmt.Printf("Busted. You lose your bet %s\n", player.Name)
+		} else {
+			scores[player.Name] = score
+		}
+	}
+
+	// if players are left, continue otherwise end game
+	if len(scores) == 0 {
+		return
 	}
 
 	// show dealer hand
-	fmt.Println("Dealer cards: ")
-	for _, c := range g.dealer.hand {
-		fmt.Println(">>>", c.Name())
+	g.ShowDealerHand()
+	dealerScore := g.dealer.hand.Score()
+	// determine winners
+	if dealerScore > 21 {
+		fmt.Println("Dealer gets busted.")
+		for p, _ := range scores {
+			fmt.Printf("%s gets double.\n", p)
+		}
+	} else {
+		for p, s := range scores {
+			if s > dealerScore {
+				fmt.Printf("%s gets double.\n", p)
+			} else if s < dealerScore {
+				fmt.Printf("%s loses their bet!\n", p)
+			} else {
+				fmt.Printf("Tie for %s\n", p)
+			}
+		}
 	}
 }
+
+// TODO: This is not working. Fix.
+func (g *Game) PrepareForNextRound() {
+	g.dealer.hand = make([]deck.Card, 0)
+	for _, p := range g.players {
+		p.hand = make([]deck.Card, 0)
+	}
+}
+
 func main() {
 	game := NewGame(1)
 	var dealer string
@@ -110,5 +189,16 @@ func main() {
 		fmt.Scanf("%s\n", &player)
 		game.AddPlayer(player)
 	}
-	game.start()
+	fmt.Println()
+	var endGame string
+	for {
+		game.start()
+		fmt.Println("Press q to quit the game or any other key to continue")
+		fmt.Scanf("%s\n", &endGame)
+		if strings.ToLower(endGame) == "q" {
+			break
+		}
+		// clean player hands
+		game.PrepareForNextRound()
+	}
 }
