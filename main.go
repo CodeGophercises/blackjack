@@ -18,19 +18,23 @@ func (h *Hand) Score() int {
 	return score
 }
 
+type Money float64
+
 type Player struct {
 	Name string
 	hand Hand
+	bet  Money           // bet on current hand
+	bets map[Money]Money // key:bet value:return on bet
 }
 
 func (p *Player) show() {
+	fmt.Println()
 	fmt.Printf("%s, Your cards are:\n", p.Name)
 	for _, c := range p.hand {
 		fmt.Println(">>>", c.Name())
 	}
 }
 
-// Just has some special rules
 type Dealer Player
 
 func (d *Dealer) show() {
@@ -67,6 +71,7 @@ func (g *Game) AddDealer(name string) {
 func (g *Game) AddPlayer(name string) {
 	g.players = append(g.players, Player{
 		Name: name,
+		bets: make(map[Money]Money),
 	})
 }
 
@@ -80,6 +85,14 @@ func (g *Game) GetNextCard() deck.Card {
 }
 
 func (g *Game) DealCards() {
+	// Players place bets
+	for i := 0; i < len(g.players); i++ {
+		var bet float64
+		fmt.Printf("%s bets:> ", g.players[i].Name)
+		fmt.Scanf("%f\n", &bet)
+		g.players[i].bet = Money(bet)
+	}
+
 	for i := 0; i < 2; i++ {
 		// to players first
 		for j := 0; j < len(g.players); j++ {
@@ -94,7 +107,7 @@ func (g *Game) DealCards() {
 
 // TODO: Add soft 17 rule
 func (g *Game) ShowDealerHand() int {
-	fmt.Println("For dealer:")
+	fmt.Println("\nFor dealer:")
 	score := g.dealer.hand.Score()
 	for score <= 16 {
 		c := g.GetNextCard()
@@ -108,12 +121,18 @@ func (g *Game) ShowDealerHand() int {
 	return score
 
 }
-func (g *Game) start() {
-	g.DealCards()
-	scores := make(map[string]int)
-	for _, player := range g.players {
+
+func (g *Game) PlayerTurns() map[*Player]int {
+	scores := make(map[*Player]int)
+	for i, player := range g.players {
 		player.show()
 		score := player.hand.Score()
+		if score == 21 {
+			// blackjack
+			fmt.Printf("Blackjack for %s. You get 150%% on your bet!\n", player.Name)
+			g.players[i].bets[player.bet] = player.bet * 1.5
+			continue
+		}
 		fmt.Print("Enter 0 to stand and 1 to hit:> ")
 		var input int
 		fmt.Scanf("%d\n", &input)
@@ -132,10 +151,41 @@ func (g *Game) start() {
 		if score > 21 {
 			// busted
 			fmt.Printf("Busted. You lose your bet %s\n", player.Name)
+			g.players[i].bets[player.bet] = 0
 		} else {
-			scores[player.Name] = score
+			scores[&g.players[i]] = score
 		}
 	}
+	return scores
+}
+
+func (g *Game) FindWinners(dealerScore int, playerScores map[*Player]int) {
+	fmt.Println()
+	if dealerScore > 21 {
+		fmt.Println("Dealer gets busted.")
+		for p, _ := range playerScores {
+			fmt.Printf("%s gets double.\n", p.Name)
+			p.bets[p.bet] = p.bet * 2
+		}
+	} else {
+		for p, s := range playerScores {
+			if s > dealerScore {
+				fmt.Printf("%s gets double.\n", p.Name)
+				p.bets[p.bet] = p.bet * 2
+			} else if s < dealerScore {
+				fmt.Printf("%s loses their bet!\n", p.Name)
+				p.bets[p.bet] = 0
+			} else {
+				fmt.Printf("Tie for %s\n", p.Name)
+				p.bets[p.bet] = p.bet
+			}
+		}
+	}
+}
+
+func (g *Game) start() {
+	g.DealCards()
+	scores := g.PlayerTurns()
 
 	// if players are left, continue otherwise end game
 	if len(scores) == 0 {
@@ -145,35 +195,23 @@ func (g *Game) start() {
 	// show dealer hand
 	dealerScore := g.ShowDealerHand()
 	fmt.Printf("Dealer scores: %d\n", dealerScore)
+
 	// determine winners
-	if dealerScore > 21 {
-		fmt.Println("Dealer gets busted.")
-		for p, _ := range scores {
-			fmt.Printf("%s gets double.\n", p)
-		}
-	} else {
-		for p, s := range scores {
-			if s > dealerScore {
-				fmt.Printf("%s gets double.\n", p)
-			} else if s < dealerScore {
-				fmt.Printf("%s loses their bet!\n", p)
-			} else {
-				fmt.Printf("Tie for %s\n", p)
-			}
-		}
-	}
+	g.FindWinners(dealerScore, scores)
 }
 
 func (g *Game) PrepareForNextRound() {
 	g.dealer.hand = make([]deck.Card, 0)
 	for i, _ := range g.players {
 		g.players[i].hand = make([]deck.Card, 0)
+		g.players[i].bet = Money(0)
 	}
 	return
 }
 
 func main() {
-	game := NewGame(1)
+	numDecks := 1
+	game := NewGame(numDecks)
 	var dealer string
 	fmt.Print("dealer name:> ")
 	fmt.Scanf("%s\n", &dealer)
@@ -191,11 +229,22 @@ func main() {
 	var endGame string
 	for {
 		game.start()
-		fmt.Println("Press q to quit the game or any other key to continue")
+		fmt.Println("\nPress q to quit the game or any other key to continue")
 		fmt.Scanf("%s\n", &endGame)
 		if strings.ToLower(endGame) == "q" {
 			break
 		}
 		game.PrepareForNextRound()
+	}
+
+	fmt.Println()
+	// Print money earned by players
+	for _, player := range game.players {
+		var bets, returns Money
+		for b, r := range player.bets {
+			bets += b
+			returns += r
+		}
+		fmt.Printf("\nFor %s: Invested %f and made %f\n", player.Name, bets, returns)
 	}
 }
